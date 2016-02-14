@@ -42,9 +42,8 @@ class Container(api_hour.Container):
                                                   access_log=None,
                                                   access_log_format=self.worker.cfg.access_log_format)]
 
-    @asyncio.coroutine
-    def start(self):
-        yield from super().start()
+    async def start(self):
+        await super().start()
         LOG.info('Starting engines...')
         self.engines['pg'] = self.loop.create_task(aiopg.create_pool(host=os.environ.get('DBHOST', self.config['engines']['pg']['host']),
                                                                      port=int(self.config['engines']['pg']['port']),
@@ -56,8 +55,8 @@ class Container(api_hour.Container):
                                                                      minsize=int(self.config['engines']['pg']['minsize']),
                                                                      maxsize=int(self.config['engines']['pg']['maxsize']),
                                                                      loop=self.loop))
-        yield from asyncio.wait([self.engines['pg']], return_when=asyncio.ALL_COMPLETED)
-        self.engines['redis'] = yield from asyncio_redis.Pool.create(host=self.config['engines']['redis']['host'],
+        await asyncio.wait([self.engines['pg']], return_when=asyncio.ALL_COMPLETED)
+        self.engines['redis'] = await asyncio_redis.Pool.create(host=self.config['engines']['redis']['host'],
                                                                      port=self.config['engines']['redis']['port'],
                                                                      poolsize=self.config['engines']['redis']['poolsize'],
                                                                      loop=self.loop,
@@ -65,17 +64,16 @@ class Container(api_hour.Container):
 
         LOG.info('All engines ready !')
 
-    @asyncio.coroutine
-    def stop(self):
+    async def stop(self):
         LOG.info('Stopping engines...')
         if 'pg' in self.engines:
             if self.engines['pg'].done():
                 self.engines['pg'].result().terminate()
-                yield from self.engines['pg'].result().wait_closed()
+                await self.engines['pg'].result().wait_closed()
             else:
-                yield from self.engines['pg'].cancel()
+                await self.engines['pg'].cancel()
         if 'redis' in self.engines:
             self.engines['redis'].close()
-            yield from asyncio.sleep(1) # wait redis close connection
+            await asyncio.sleep(1) # wait redis close connection
         LOG.info('All engines stopped !')
-        yield from super().stop()
+        await super().stop()
