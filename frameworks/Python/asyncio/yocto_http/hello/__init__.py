@@ -6,6 +6,7 @@ import aiopg
 import jinja2
 import psycopg2.extras
 import asyncio_redis
+import uvloop
 from asyncio_redis.protocol import HiRedisProtocol
 import api_hour
 
@@ -15,11 +16,14 @@ from .utils import yocto_http
 
 LOG = logging.getLogger(__name__)
 
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+LOOP = uvloop.new_event_loop()
+
 
 class Container(api_hour.Container):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.servers['http'] = yocto_http.Application(loop=kwargs['loop'])
+    def __init__(self, config, worker, loop=None):
+        super().__init__(config, worker, loop=LOOP)
+        self.servers['http'] = yocto_http.Application(loop=self.loop)
         self.servers['http'].ah_container = self # keep a reference to Container
         # routes
         self.servers['http'].add_route('/db', endpoints.world.db)
@@ -28,10 +32,15 @@ class Container(api_hour.Container):
         self.servers['http'].add_route('/updates', endpoints.world.updates)
         self.servers['http']['j2_env'] = jinja2.Environment(loader=jinja2.PackageLoader('hello'))
 
+    @classmethod
+    def make_event_loop(cls, config):
+        return LOOP
+
     def make_servers(self):
         return [servers.yocto_http.YoctoHttpJson,
                 self.servers['http'].handler,
-                servers.yocto_http.YoctoHttpText]
+                servers.yocto_http.YoctoHttpText,
+                lambda: servers.http_tools_srv.HttpProtocol(loop=self.loop)]
 
     @asyncio.coroutine
     def start(self):
@@ -47,7 +56,7 @@ class Container(api_hour.Container):
                                                                      minsize=int(self.config['engines']['pg']['minsize']),
                                                                      maxsize=int(self.config['engines']['pg']['maxsize']),
                                                                      loop=self.loop))
-        yield from asyncio.wait([self.engines['pg']], return_when=asyncio.ALL_COMPLETED)
+        yield from asyncio.wait([self.engines['pg']], return_when=asyncio.ALL_COMPLETED, loop=self.loop)
         self.engines['redis'] = yield from asyncio_redis.Pool.create(host=self.config['engines']['redis']['host'],
                                                                      port=self.config['engines']['redis']['port'],
                                                                      poolsize=self.config['engines']['redis']['poolsize'],
