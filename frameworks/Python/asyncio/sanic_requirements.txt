@@ -1,0 +1,6 @@
+aioredis==0.2.8
+hiredis==0.2.0
+httptools==0.0.9
+-e git+git@github.com:Eyepea/sanic.git@7dcdc6208dc8b69d2ba1ea9826f7bd7b226c690c#egg=Sanic
+ujson==1.35
+uvloop==0.5.4
